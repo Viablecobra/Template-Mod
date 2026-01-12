@@ -11,6 +11,7 @@ mod jniopts;
 mod plthook;
 mod config;
 mod brightness;
+mod preloader;
 use config::init_config;
 use crate::{loader::ResourcePackManager, plthook::replace_plt_functions};
 use bhook::hook_fn;
@@ -191,6 +192,20 @@ pub fn hook_aaset() {
     //The actual work
     replace_plt_functions(&dyn_lib, asset_fn_list);
 }
+
+fn resolve_pl_signature(signature: &str, module_name: &str) -> Option<*const u8> {
+    unsafe {
+        let sig_cstr = std::ffi::CString::new(signature).unwrap();
+        let mod_cstr = std::ffi::CString::new(module_name).unwrap();
+        let result = preloader::pl_resolve_signature(sig_cstr.as_ptr(), mod_cstr.as_ptr());
+        if result == 0 {
+            None
+        } else {
+            Some(result as *const u8)
+        }
+    }
+}
+
 /// Find some library's PLT
 fn find_lib<'a>(target_name: &str) -> Option<plt_rs::LoadedLibrary<'a>> {
     let loaded_modules = plt_rs::collect_modules();

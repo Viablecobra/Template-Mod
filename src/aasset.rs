@@ -10,13 +10,16 @@ use ndk_sys::{AAsset, AAssetManager};
 use std::{
     cell::UnsafeCell,
     collections::HashMap,
-    ffi::{CStr, OsStr},
-    io::{self, Read, Seek},
+    ffi::{CStr, CString, OsStr},
+    io::{self, Cursor, Read, Seek, Write},
     os::unix::ffi::OsStrExt,
-    path::Path,
+    path::{Path, PathBuf},
     //    ptr,
-    sync::{LazyLock, Mutex},
+    fs,
+    sync::{LazyLock, Lazy, Mutex, Arc, OnceLock},
 };
+use serde_json::{Value, Map};
+
 static MC_FILELOADER: LazyLock<Mutex<FileLoader>> = LazyLock::new(|| Mutex::new(FileLoader::new()));
 // This makes me feel wrong... but all we will do is compare the pointer
 // and the struct will be used in a mutex so this is safe??
