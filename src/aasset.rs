@@ -16,7 +16,7 @@ use std::{
     path::{Path, PathBuf},
     //    ptr,
     fs,
-    sync::{LazyLock, Lazy, Mutex, Arc, OnceLock},
+    sync::{LazyLock, Mutex, Arc, OnceLock},
 };
 use serde_json::{Value, Map};
 

@@ -20,6 +20,7 @@ use bstr::ByteSlice;
 use atoi::FromRadix16;
 use plt_rs::DynamicLibrary;
 use tinypatscan::Pattern;
+use libc::c_void;
 
 #[cfg(target_arch = "aarch64")]
 const RPMC_PATTERNS: [Pattern; 3] = [
