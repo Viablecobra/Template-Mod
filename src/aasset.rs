@@ -7,6 +7,7 @@ use crate::{
 use crate::config::{is_no_fog_enabled, is_particles_disabler_enabled};
 use libc::{c_char, c_int, c_void, off64_t, off_t, size_t};
 use ndk_sys::{AAsset, AAssetManager};
+use once_cell::sync::Lazy;
 use std::{
     cell::UnsafeCell,
     collections::HashMap,
