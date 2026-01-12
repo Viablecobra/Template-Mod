@@ -4,6 +4,7 @@ use crate::{
     loader::{Buffer, FileLoader},
     LockResultExt,
 };
+use crate::config::{is_no_fog_enabled, is_particles_disabler_enabled};
 use libc::{c_char, c_int, c_void, off64_t, off_t, size_t};
 use ndk_sys::{AAsset, AAssetManager};
 use std::{
@@ -27,6 +28,44 @@ unsafe impl Send for AAssetPtr {}
 static mut WANTED_ASSETS: LazyLock<UnsafeCell<HashMap<AAssetPtr, Buffer>>> =
     LazyLock::new(|| UnsafeCell::new(HashMap::new()));
 
+static WANTED_ASSETS_MUTEX: Lazy<Mutex<HashMap<AAssetPtr, Cursor<Vec<u8>>>>> =
+    Lazy::new(|| Mutex::new(HashMap::new()));
+    
+// Xelo constants start
+const NO_FOG_MATERIAL: &[u8] = include_bytes!("utils/no_fog/RenderChunk.material.bin");
+
+// Xelo constants end
+
+// Xelo fn start
+
+fn no_fog_file(c_path: &Path) -> bool {
+    
+    let path_str = c_path.to_string_lossy();
+    let filename = match c_path.file_name() {
+        Some(name) => name.to_string_lossy(),
+        None => return false,
+    };
+    
+    if filename != "RenderChunk.material.bin" {
+        return false;
+    }
+    
+    let no_fog_patterns = [
+        "materials/RenderChunk.material.bin",
+        "/materials/RenderChunk.material.bin",
+        "resource_packs/vanilla/materials/RenderChunk.material.bin",
+        "assets/resource_packs/vanilla/materials/RenderChunk.material.bin",
+        "vanilla/materials/RenderChunk.material.bin",
+        "assets/materials/RenderChunk.material.bin",
+    ];
+    
+    no_fog_patterns.iter().any(|pattern| {
+        path_str.contains(pattern) || path_str.ends_with(pattern)
+    })
+}
+
+// Xelo fn end
+
 pub unsafe extern "C" fn open(
     man: *mut AAssetManager,
     fname: *const c_char,
@@ -46,6 +85,23 @@ pub unsafe extern "C" fn open(
     let raw_cstr = c_str.to_bytes();
     let os_str = OsStr::from_bytes(raw_cstr);
     let c_path: &Path = Path::new(os_str);
+    let Some(os_filename) = c_path.file_name() else {
+        log::warn!("Path had no filename: {c_path:?}");
+        return aasset;
+    };
+    
+// Xelo Start
+    
+    if no_fog_file(c_path) {
+    log::info!("Intercepting with RenderChunk.material.bin: {}", c_path.display());
+    let buffer = NO_FOG_MATERIAL.to_vec();
+    let mut wanted_lock = WANTED_ASSETS_MUTEX.lock().unwrap();
+    wanted_lock.insert(AAssetPtr(aasset), Cursor::new(buffer));
+    return aasset;
+}
+    
+// Xelo end
+    
     let mut sus = MC_FILELOADER.lock().ignore_poison();
     if let Some(yay) = sus.get_file(c_path, manager) {
         WANTED_ASSETS.get_mut().insert(AAssetPtr(aasset), yay);

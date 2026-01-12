@@ -9,6 +9,9 @@ use std::{
 mod aasset;
 mod jniopts;
 mod plthook;
+mod config;
+mod brightness;
+use config::init_config;
 use crate::{loader::ResourcePackManager, plthook::replace_plt_functions};
 use bhook::hook_fn;
 use bstr::ByteSlice;
@@ -53,6 +56,7 @@ pub fn setup_logging() {
 #[ctor::ctor]
 fn safe_setup() {
     setup_logging();
+    config::init_config();
     std::panic::set_hook(Box::new(move |panic_info| {
         log::error!("Thread crashed: {}", panic_info);
     }));
@@ -61,6 +65,9 @@ fn safe_setup() {
 }
 fn main() {
     log::info!("Starting, mbl2 version v0.1.12");
+    if config::is_better_brightness_enabled() {
+        let _ = brightness::patch_gfx_gamma();
+    }
     let mcmaps = find_minecraft_library_manually()
         .expect("Cannot find libminecraftpe.so in memory maps - device not supported");
     let addr = find_signatures(&RPMC_PATTERNS, &mcmaps).expect("No signature was found");
