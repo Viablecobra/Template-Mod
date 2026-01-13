@@ -42,30 +42,15 @@ const NO_FOG_MATERIAL: &[u8] = include_bytes!("utils/no_fog/RenderChunk.material
 
 // Xelo fn start
 
-fn no_fog_file(c_path: &Path) -> bool {
-    
-    let path_str = c_path.to_string_lossy();
-    let filename = match c_path.file_name() {
-        Some(name) => name.to_string_lossy(),
-        None => return false,
-    };
-    
-    if filename != "RenderChunk.material.bin" {
-        return false;
+fn get_no_fog_material_data(filename: &str) -> Option<&'static [u8]> {
+    if !is_no_fog_enabled() {
+        return None;
     }
-    
-    let no_fog_patterns = [
-        "materials/RenderChunk.material.bin",
-        "/materials/RenderChunk.material.bin",
-        "resource_packs/vanilla/materials/RenderChunk.material.bin",
-        "assets/resource_packs/vanilla/materials/RenderChunk.material.bin",
-        "vanilla/materials/RenderChunk.material.bin",
-        "assets/materials/RenderChunk.material.bin",
-    ];
-    
-    no_fog_patterns.iter().any(|pattern| {
-        path_str.contains(pattern) || path_str.ends_with(pattern)
-    })
+
+    match filename {
+        "RenderChunk.material.bin" => Some(NO_FOG_MATERIAL),
+        _ => None,
+    }
 }
 
 // Xelo fn end
@@ -96,13 +81,13 @@ pub unsafe extern "C" fn open(
     
 // Xelo Start
     
-    if no_fog_file(c_path) {
-    log::info!("Intercepting with RenderChunk.material.bin: {}", c_path.display());
-    let buffer = NO_FOG_MATERIAL.to_vec();
-    let mut wanted_lock = WANTED_ASSETS_MUTEX.lock().unwrap();
-    wanted_lock.insert(AAssetPtr(aasset), Cursor::new(buffer));
-    return aasset;
-}
+        if let Some(no_fog_data) = get_no_fog_material_data(&filename_str) {
+        log::info!("Intercepting {} with no-fog material (no-fog enabled)", filename_str);
+        let buffer = no_fog_data.to_vec();
+        let mut wanted_lock = WANTED_ASSETS_MUTEX.lock().unwrap();
+        wanted_lock.insert(AAssetPtr(aasset), Cursor::new(buffer));
+        return aasset;
+    }
     
 // Xelo end
     
