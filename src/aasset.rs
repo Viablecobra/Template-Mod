@@ -124,30 +124,6 @@ fn get_cross_hair_png_data(filename: &str) -> Option<Arc<Vec<u8>>> {
     Some(Arc::new(CUSTOM_CROSS_HAIR_PNG.to_vec()))
 }
 
-fn manifest_json_file(c_path: &Path) -> bool {
-    
-    let path_str = c_path.to_string_lossy();
-    let filename = match c_path.file_name() {
-        Some(name) => name.to_string_lossy(),
-        None => return false,
-    };
-    
-    if filename != "manifest.json" {
-        return false;
-    }
-    
-    let manifest_json_patterns = [
-        "resource_packs/oreui/manifest.json",
-        "assets/resource_packs/oreui/manifest.json",
-        "oreui/manifest.json",
-        "assets/oreui/manifest.json",
-    ];
-    
-    manifest_json_patterns.iter().any(|pattern| {
-        path_str.contains(pattern) || path_str.ends_with(pattern)
-    })
-}
-
 fn pack_icn_file(c_path: &Path) -> bool {
     
     let path_str = c_path.to_string_lossy();
@@ -1021,14 +997,6 @@ if is_particles_disabler_file(c_path) {
     log::info!("Intercepting {} with crosshair png (custom-cross-hair-enabled enabled)", filename_str);
     let mut wanted_lock = WANTED_ASSETS_MUTEX.lock().unwrap();
     wanted_lock.insert(AAssetPtr(aasset), Cursor::new(cross_hair_png_data.clone().to_vec()));
-    return aasset;
-}
-
-if manifest_json_file(c_path) {
-    log::info!("Intercepting with manifest: {}", c_path.display());
-    let buffer = MANIFEST_JSON.to_vec();
-    let mut wanted_lock = WANTED_ASSETS_MUTEX.lock().unwrap();
-    wanted_lock.insert(AAssetPtr(aasset), Cursor::new(buffer));
     return aasset;
 }
 
