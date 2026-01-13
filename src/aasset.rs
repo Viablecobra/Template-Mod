@@ -80,7 +80,9 @@ pub unsafe extern "C" fn open(
     };
     
 // Xelo Start
-    
+        
+    // Material replacements
+    let filename_str = os_filename.to_string_lossy();
         if let Some(no_fog_data) = get_no_fog_material_data(&filename_str) {
         log::info!("Intercepting {} with no-fog material (no-fog enabled)", filename_str);
         let buffer = no_fog_data.to_vec();
