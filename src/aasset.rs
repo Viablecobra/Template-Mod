@@ -125,86 +125,163 @@ macro_rules! handle_result {
 }
 
 pub unsafe extern "C" fn seek64(aasset: *mut AAsset, off: off64_t, whence: c_int) -> off64_t {
-    let file = match WANTED_ASSETS.get_mut().get_mut(&AAssetPtr(aasset)) {
-        Some(file) => file,
-        None => return ndk_sys::AAsset_seek64(aasset, off, whence),
-    };
-    handle_result!(seek_facade(off, whence, file).try_into())
+    let ptr = AAssetPtr(aasset);
+    
+    if let Some(file) = WANTED_ASSETS.get_mut().get_mut(&ptr) {
+        handle_result!(seek_facade(off, whence, file).try_into())
+    } else if let Ok(mut cursor_map) = WANTED_ASSETS_MUTEX.lock() {
+        if let Some(cursor) = cursor_map.get_mut(&ptr) {
+            let offset = match whence {
+                libc::SEEK_SET => io::SeekFrom::Start(off.max(0) as u64),
+                libc::SEEK_CUR => io::SeekFrom::Current(off),
+                libc::SEEK_END => io::SeekFrom::End(off),
+                _ => return ndk_sys::AAsset_seek64(aasset, off, whence),
+            };
+            match cursor.seek(offset) {
+                Ok(pos) => pos as off64_t,
+                Err(_) => ndk_sys::AAsset_seek64(aasset, off, whence),
+            }
+        } else {
+            ndk_sys::AAsset_seek64(aasset, off, whence)
+        }
+    } else {
+        ndk_sys::AAsset_seek64(aasset, off, whence)
+    }
 }
 
 pub unsafe extern "C" fn seek(aasset: *mut AAsset, off: off_t, whence: c_int) -> off_t {
-    let wanted_assets = WANTED_ASSETS.get_mut();
-    let file = match wanted_assets.get_mut(&AAssetPtr(aasset)) {
-        Some(file) => file,
-        None => return ndk_sys::AAsset_seek(aasset, off, whence),
-    };
-    handle_result!(seek_facade(off.into(), whence, file).try_into())
+    let ptr = AAssetPtr(aasset);
+    
+    if let Some(file) = WANTED_ASSETS.get_mut().get_mut(&ptr) {
+        handle_result!(seek_facade(off.into(), whence, file).try_into())
+    } else if let Ok(mut cursor_map) = WANTED_ASSETS_MUTEX.lock() {
+        if let Some(cursor) = cursor_map.get_mut(&ptr) {
+            let offset = match whence {
+                libc::SEEK_SET => io::SeekFrom::Start(off.max(0) as u64),
+                libc::SEEK_CUR => io::SeekFrom::Current(off.into()),
+                libc::SEEK_END => io::SeekFrom::End(off.into()),
+                _ => return ndk_sys::AAsset_seek(aasset, off, whence),
+            };
+            match cursor.seek(offset) {
+                Ok(pos) => pos as off_t,
+                Err(_) => ndk_sys::AAsset_seek(aasset, off, whence),
+            }
+        } else {
+            ndk_sys::AAsset_seek(aasset, off, whence)
+        }
+    } else {
+        ndk_sys::AAsset_seek(aasset, off, whence)
+    }
 }
 
 pub unsafe extern "C" fn read(aasset: *mut AAsset, buf: *mut c_void, count: size_t) -> c_int {
-    let wanted_assets = WANTED_ASSETS.get_mut();
-    let file = match wanted_assets.get_mut(&AAssetPtr(aasset)) {
-        Some(file) => file,
-        None => return ndk_sys::AAsset_read(aasset, buf, count),
-    };
-    // Reuse buffer given by caller
+    let ptr = AAssetPtr(aasset);
     let rs_buffer = core::slice::from_raw_parts_mut(buf as *mut u8, count);
-    let read_total = handle_result!((*file).read(rs_buffer));
-    handle_result!(read_total.try_into())
+    
+    if let Some(file) = WANTED_ASSETS.get_mut().get_mut(&ptr) {
+        let read_total = handle_result!((*file).read(rs_buffer));
+        handle_result!(read_total.try_into())
+    } else if let Ok(mut cursor_map) = WANTED_ASSETS_MUTEX.lock() {
+        if let Some(cursor) = cursor_map.get_mut(&ptr) {
+            let read_total = handle_result!(cursor.read(rs_buffer));
+            handle_result!(read_total.try_into())
+        } else {
+            ndk_sys::AAsset_read(aasset, buf, count)
+        }
+    } else {
+        ndk_sys::AAsset_read(aasset, buf, count)
+    }
 }
 
 pub unsafe extern "C" fn len(aasset: *mut AAsset) -> off_t {
-    let wanted_assets = WANTED_ASSETS.get_mut();
-    let file = match wanted_assets.get(&AAssetPtr(aasset)) {
-        Some(file) => file,
-        None => return ndk_sys::AAsset_getLength(aasset),
-    };
-    handle_result!(file.get_ref().len().try_into())
+    let ptr = AAssetPtr(aasset);
+    
+    if let Some(file) = WANTED_ASSETS.get(&ptr) {
+        handle_result!(file.get_ref().len().try_into())
+    } else if let Ok(cursor_map) = WANTED_ASSETS_MUTEX.lock() {
+        if let Some(cursor) = cursor_map.get(&ptr) {
+            handle_result!(cursor.get_ref().len().try_into())
+        } else {
+            ndk_sys::AAsset_getLength(aasset)
+        }
+    } else {
+        ndk_sys::AAsset_getLength(aasset)
+    }
 }
 
 pub unsafe extern "C" fn len64(aasset: *mut AAsset) -> off64_t {
-    let wanted_assets = WANTED_ASSETS.get_mut();
-    let file = match wanted_assets.get(&AAssetPtr(aasset)) {
-        Some(file) => file,
-        None => return ndk_sys::AAsset_getLength64(aasset),
-    };
-    handle_result!(file.get_ref().len().try_into())
+    let ptr = AAssetPtr(aasset);
+    
+    if let Some(file) = WANTED_ASSETS.get(&ptr) {
+        handle_result!(file.get_ref().len().try_into())
+    } else if let Ok(cursor_map) = WANTED_ASSETS_MUTEX.lock() {
+        if let Some(cursor) = cursor_map.get(&ptr) {
+            handle_result!(cursor.get_ref().len().try_into())
+        } else {
+            ndk_sys::AAsset_getLength64(aasset)
+        }
+    } else {
+        ndk_sys::AAsset_getLength64(aasset)
+    }
 }
 
 pub unsafe extern "C" fn rem(aasset: *mut AAsset) -> off_t {
-    let wanted_assets = WANTED_ASSETS.get_mut();
-    let file = match wanted_assets.get(&AAssetPtr(aasset)) {
-        Some(file) => file,
-        None => return ndk_sys::AAsset_getRemainingLength(aasset),
-    };
-    handle_result!((file.get_ref().len() - file.position() as usize).try_into())
+    let ptr = AAssetPtr(aasset);
+    
+    if let Some(file) = WANTED_ASSETS.get(&ptr) {
+        handle_result!((file.get_ref().len() - file.position() as usize).try_into())
+    } else if let Ok(cursor_map) = WANTED_ASSETS_MUTEX.lock() {
+        if let Some(cursor) = cursor_map.get(&ptr) {
+            handle_result!((cursor.get_ref().len() - cursor.position() as usize).try_into())
+        } else {
+            ndk_sys::AAsset_getRemainingLength(aasset)
+        }
+    } else {
+        ndk_sys::AAsset_getRemainingLength(aasset)
+    }
 }
 
 pub unsafe extern "C" fn rem64(aasset: *mut AAsset) -> off64_t {
-    let wanted_assets = WANTED_ASSETS.get_mut();
-    let file = match wanted_assets.get(&AAssetPtr(aasset)) {
-        Some(file) => file,
-        None => return ndk_sys::AAsset_getRemainingLength64(aasset),
-    };
-    handle_result!((file.get_ref().len() - file.position() as usize).try_into())
+    let ptr = AAssetPtr(aasset);
+    
+    if let Some(file) = WANTED_ASSETS.get(&ptr) {
+        handle_result!((file.get_ref().len() - file.position() as usize).try_into())
+    } else if let Ok(cursor_map) = WANTED_ASSETS_MUTEX.lock() {
+        if let Some(cursor) = cursor_map.get(&ptr) {
+            handle_result!((cursor.get_ref().len() - cursor.position() as usize).try_into())
+        } else {
+            ndk_sys::AAsset_getRemainingLength64(aasset)
+        }
+    } else {
+        ndk_sys::AAsset_getRemainingLength64(aasset)
+    }
 }
 
 pub unsafe extern "C" fn close(aasset: *mut AAsset) {
-    let wanted_assets = WANTED_ASSETS.get_mut();
-    if let Some(buffer) = wanted_assets.remove(&AAssetPtr(aasset)) {
+    let ptr = AAssetPtr(aasset);
+    
+    if let Some(buffer) = WANTED_ASSETS.get_mut().remove(&ptr) {
         MC_FILELOADER.lock().ignore_poison().last_buffer = Some(buffer);
     }
+    WANTED_ASSETS_MUTEX.lock().unwrap().remove(&ptr);
+    
     ndk_sys::AAsset_close(aasset);
 }
 
 pub unsafe extern "C" fn get_buffer(aasset: *mut AAsset) -> *const c_void {
-    let wanted_assets = WANTED_ASSETS.get_mut();
-    let file = match wanted_assets.get_mut(&AAssetPtr(aasset)) {
-        Some(file) => file,
-        None => return ndk_sys::AAsset_getBuffer(aasset),
-    };
-    // Let's hope this does not go boom boom
-    file.get_ref().as_ptr().cast()
+    let ptr = AAssetPtr(aasset);
+    
+    if let Some(file) = WANTED_ASSETS.get(&ptr) {
+        file.get_ref().as_ptr().cast()
+    } else if let Ok(cursor_map) = WANTED_ASSETS_MUTEX.lock() {
+        if let Some(cursor) = cursor_map.get(&ptr) {
+            cursor.get_ref().as_ptr().cast()
+        } else {
+            ndk_sys::AAsset_getBuffer(aasset)
+        }
+    } else {
+        ndk_sys::AAsset_getBuffer(aasset)
+    }
 }
 
 pub unsafe extern "C" fn fd_dummy(
@@ -212,13 +289,16 @@ pub unsafe extern "C" fn fd_dummy(
     out_start: *mut off_t,
     out_len: *mut off_t,
 ) -> c_int {
-    let wanted_assets = WANTED_ASSETS.get_mut();
-    match wanted_assets.get(&AAssetPtr(aasset)) {
-        Some(_) => {
-            log::error!("WE GOT BUSTED NOOO");
-            -1
-        }
-        None => ndk_sys::AAsset_openFileDescriptor(aasset, out_start, out_len),
+    let ptr = AAssetPtr(aasset);
+    
+    if WANTED_ASSETS.get(&ptr).is_some() {
+        log::error!("WE GOT BUSTED NOOO");
+        -1
+    } else if WANTED_ASSETS_MUTEX.lock().is_ok_and(|map| map.contains_key(&ptr)) {
+        log::error!("WE GOT BUSTED NOOO");
+        -1
+    } else {
+        ndk_sys::AAsset_openFileDescriptor(aasset, out_start, out_len)
     }
 }
 
@@ -227,21 +307,28 @@ pub unsafe extern "C" fn fd_dummy64(
     out_start: *mut off64_t,
     out_len: *mut off64_t,
 ) -> c_int {
-    let wanted_assets = WANTED_ASSETS.get_mut();
-    match wanted_assets.get(&AAssetPtr(aasset)) {
-        Some(_) => {
-            log::error!("WE GOT BUSTED NOOO");
-            -1
-        }
-        None => ndk_sys::AAsset_openFileDescriptor64(aasset, out_start, out_len),
+    let ptr = AAssetPtr(aasset);
+    
+    if WANTED_ASSETS.get(&ptr).is_some() {
+        log::error!("WE GOT BUSTED NOOO");
+        -1
+    } else if WANTED_ASSETS_MUTEX.lock().is_ok_and(|map| map.contains_key(&ptr)) {
+        log::error!("WE GOT BUSTED NOOO");
+        -1
+    } else {
+        ndk_sys::AAsset_openFileDescriptor64(aasset, out_start, out_len)
     }
 }
 
 pub unsafe extern "C" fn is_alloc(aasset: *mut AAsset) -> c_int {
-    let wanted_assets = WANTED_ASSETS.get_mut();
-    match wanted_assets.get(&AAssetPtr(aasset)) {
-        Some(_) => false as c_int,
-        None => ndk_sys::AAsset_isAllocated(aasset),
+    let ptr = AAssetPtr(aasset);
+    
+    if WANTED_ASSETS.get(&ptr).is_some() {
+        false as c_int
+    } else if WANTED_ASSETS_MUTEX.lock().is_ok_and(|map| map.contains_key(&ptr)) {
+        false as c_int
+    } else {
+        ndk_sys::AAsset_isAllocated(aasset)
     }
 }
 
@@ -265,5 +352,56 @@ fn seek_facade(offset: i64, whence: c_int, file: &mut Buffer) -> i64 {
             log::error!("seek Error: {err}");
             return -1;
         }
+    }
+}
+
+// Universal asset handler trait
+trait AssetReader: std::io::Read + std::io::Seek + std::io::BufRead {
+    fn len(&self) -> usize;
+    fn position(&self) -> u64;
+}
+
+impl AssetReader for Buffer {
+    fn len(&self) -> usize { self.get_ref().len() }
+    fn position(&self) -> u64 { self.position() as u64 }
+}
+
+impl AssetReader for Cursor<Vec<u8>> {
+    fn len(&self) -> usize { self.get_ref().len() }
+    fn position(&self) -> u64 { self.position() }
+}
+
+// Universal seek helper
+fn seek_universal<R: AssetReader>(
+    offset: i64, 
+    whence: c_int, 
+    reader: &mut R
+) -> i64 {
+    let seek_from = match whence {
+        libc::SEEK_SET => io::SeekFrom::Start(offset.max(0) as u64),
+        libc::SEEK_CUR => io::SeekFrom::Current(offset),
+        libc::SEEK_END => io::SeekFrom::End(offset),
+        _ => return -1,
+    };
+    match reader.seek(seek_from) {
+        Ok(pos) => pos as i64,
+        Err(_) => -1,
+    }
+}
+
+fn get_asset_reader(
+    ptr: &AAssetPtr
+) -> Option<&'static mut dyn AssetReader> {
+    if let Some(buffer) = WANTED_ASSETS.get_mut().get_mut(ptr) {
+        Some(buffer as &mut dyn AssetReader)
+    }
+    else if let Ok(map) = WANTED_ASSETS_MUTEX.lock() {
+        if let Some(cursor) = map.get_mut(ptr) {
+            Some(cursor as &mut dyn AssetReader)
+        } else {
+            None
+        }
+    } else {
+        None
     }
 }
