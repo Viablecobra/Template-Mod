@@ -108,7 +108,7 @@ pub unsafe extern "C" fn open(
     
     let mut sus = MC_FILELOADER.lock().ignore_poison();
     if let Some(yay) = sus.get_file(c_path, manager) {
-        WANTED_ASSETS.get_mut().insert(AAssetPtr(aasset), yay);
+        unsafe { WANTED_ASSETS.get_mut() }.insert(AAssetPtr(aasset), yay);
     }
     aasset
 }
@@ -196,7 +196,7 @@ pub unsafe extern "C" fn read(aasset: *mut AAsset, buf: *mut c_void, count: size
 pub unsafe extern "C" fn len(aasset: *mut AAsset) -> off_t {
     let ptr = AAssetPtr(aasset);
     
-    if let Some(file) = WANTED_ASSETS.get(&ptr) {
+    if let Some(file) = unsafe { WANTED_ASSETS.get_mut() }.get(&ptr) {
         handle_result!(file.get_ref().len().try_into())
     } else if let Ok(cursor_map) = WANTED_ASSETS_MUTEX.lock() {
         if let Some(cursor) = cursor_map.get(&ptr) {
@@ -212,7 +212,7 @@ pub unsafe extern "C" fn len(aasset: *mut AAsset) -> off_t {
 pub unsafe extern "C" fn len64(aasset: *mut AAsset) -> off64_t {
     let ptr = AAssetPtr(aasset);
     
-    if let Some(file) = WANTED_ASSETS.get(&ptr) {
+    if let Some(file) = unsafe { WANTED_ASSETS.get_mut() }.get(&ptr) {
         handle_result!(file.get_ref().len().try_into())
     } else if let Ok(cursor_map) = WANTED_ASSETS_MUTEX.lock() {
         if let Some(cursor) = cursor_map.get(&ptr) {
@@ -228,7 +228,7 @@ pub unsafe extern "C" fn len64(aasset: *mut AAsset) -> off64_t {
 pub unsafe extern "C" fn rem(aasset: *mut AAsset) -> off_t {
     let ptr = AAssetPtr(aasset);
     
-    if let Some(file) = WANTED_ASSETS.get(&ptr) {
+    if let Some(file) = unsafe { WANTED_ASSETS.get_mut() }.get(&ptr) {
         handle_result!((file.get_ref().len() - file.position() as usize).try_into())
     } else if let Ok(cursor_map) = WANTED_ASSETS_MUTEX.lock() {
         if let Some(cursor) = cursor_map.get(&ptr) {
@@ -244,7 +244,7 @@ pub unsafe extern "C" fn rem(aasset: *mut AAsset) -> off_t {
 pub unsafe extern "C" fn rem64(aasset: *mut AAsset) -> off64_t {
     let ptr = AAssetPtr(aasset);
     
-    if let Some(file) = WANTED_ASSETS.get(&ptr) {
+    if let Some(file) = unsafe { WANTED_ASSETS.get_mut() }.get(&ptr) {
         handle_result!((file.get_ref().len() - file.position() as usize).try_into())
     } else if let Ok(cursor_map) = WANTED_ASSETS_MUTEX.lock() {
         if let Some(cursor) = cursor_map.get(&ptr) {
@@ -260,7 +260,7 @@ pub unsafe extern "C" fn rem64(aasset: *mut AAsset) -> off64_t {
 pub unsafe extern "C" fn close(aasset: *mut AAsset) {
     let ptr = AAssetPtr(aasset);
     
-    if let Some(buffer) = WANTED_ASSETS.get_mut().remove(&ptr) {
+    if let Some(buffer) = unsafe { WANTED_ASSETS.get_mut() }.remove(&ptr) {
         MC_FILELOADER.lock().ignore_poison().last_buffer = Some(buffer);
     }
     WANTED_ASSETS_MUTEX.lock().unwrap().remove(&ptr);
@@ -271,7 +271,7 @@ pub unsafe extern "C" fn close(aasset: *mut AAsset) {
 pub unsafe extern "C" fn get_buffer(aasset: *mut AAsset) -> *const c_void {
     let ptr = AAssetPtr(aasset);
     
-    if let Some(file) = WANTED_ASSETS.get(&ptr) {
+    if let Some(file) = unsafe { WANTED_ASSETS.get_mut() }.get(&ptr) {
         file.get_ref().as_ptr().cast()
     } else if let Ok(cursor_map) = WANTED_ASSETS_MUTEX.lock() {
         if let Some(cursor) = cursor_map.get(&ptr) {
@@ -291,7 +291,7 @@ pub unsafe extern "C" fn fd_dummy(
 ) -> c_int {
     let ptr = AAssetPtr(aasset);
     
-    if WANTED_ASSETS.get(&ptr).is_some() {
+    if unsafe { WANTED_ASSETS.get_mut() }.contains_key(&ptr) {
         log::error!("WE GOT BUSTED NOOO");
         -1
     } else if WANTED_ASSETS_MUTEX.lock().is_ok_and(|map| map.contains_key(&ptr)) {
@@ -309,7 +309,7 @@ pub unsafe extern "C" fn fd_dummy64(
 ) -> c_int {
     let ptr = AAssetPtr(aasset);
     
-    if WANTED_ASSETS.get(&ptr).is_some() {
+    if unsafe { WANTED_ASSETS.get_mut() }.contains_key(&ptr) {
         log::error!("WE GOT BUSTED NOOO");
         -1
     } else if WANTED_ASSETS_MUTEX.lock().is_ok_and(|map| map.contains_key(&ptr)) {
@@ -323,7 +323,7 @@ pub unsafe extern "C" fn fd_dummy64(
 pub unsafe extern "C" fn is_alloc(aasset: *mut AAsset) -> c_int {
     let ptr = AAssetPtr(aasset);
     
-    if WANTED_ASSETS.get(&ptr).is_some() {
+    if unsafe { WANTED_ASSETS.get_mut() }.contains_key(&ptr) {
         false as c_int
     } else if WANTED_ASSETS_MUTEX.lock().is_ok_and(|map| map.contains_key(&ptr)) {
         false as c_int
@@ -352,56 +352,5 @@ fn seek_facade(offset: i64, whence: c_int, file: &mut Buffer) -> i64 {
             log::error!("seek Error: {err}");
             return -1;
         }
-    }
-}
-
-// Universal asset handler trait
-trait AssetReader: std::io::Read + std::io::Seek + std::io::BufRead {
-    fn len(&self) -> usize;
-    fn position(&self) -> u64;
-}
-
-impl AssetReader for Buffer {
-    fn len(&self) -> usize { self.get_ref().len() }
-    fn position(&self) -> u64 { self.position() as u64 }
-}
-
-impl AssetReader for Cursor<Vec<u8>> {
-    fn len(&self) -> usize { self.get_ref().len() }
-    fn position(&self) -> u64 { self.position() }
-}
-
-// Universal seek helper
-fn seek_universal<R: AssetReader>(
-    offset: i64, 
-    whence: c_int, 
-    reader: &mut R
-) -> i64 {
-    let seek_from = match whence {
-        libc::SEEK_SET => io::SeekFrom::Start(offset.max(0) as u64),
-        libc::SEEK_CUR => io::SeekFrom::Current(offset),
-        libc::SEEK_END => io::SeekFrom::End(offset),
-        _ => return -1,
-    };
-    match reader.seek(seek_from) {
-        Ok(pos) => pos as i64,
-        Err(_) => -1,
-    }
-}
-
-fn get_asset_reader(
-    ptr: &AAssetPtr
-) -> Option<&'static mut dyn AssetReader> {
-    if let Some(buffer) = WANTED_ASSETS.get_mut().get_mut(ptr) {
-        Some(buffer as &mut dyn AssetReader)
-    }
-    else if let Ok(map) = WANTED_ASSETS_MUTEX.lock() {
-        if let Some(cursor) = map.get_mut(ptr) {
-            Some(cursor as &mut dyn AssetReader)
-        } else {
-            None
-        }
-    } else {
-        None
     }
 }
